@@ -4323,11 +4323,6 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
         max_tx_size = MAX_TX_SIZE_BEFORE_SAPLING;
     }
 
-    // This RPC does not support Sapling yet.
-    if (isToSaplingZaddr || containsSaplingZaddrSource) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, Sapling is not supported yet by z_mergetoadress");
-    }
-
     // If this RPC does support Sapling...
     // If Sapling is not active, do not allow sending from or sending to Sapling addresses.
     if (!NetworkUpgradeActive(nextBlockHeight, Params().GetConsensus(), Consensus::UPGRADE_SAPLING)) {
