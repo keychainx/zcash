@@ -5,6 +5,7 @@
 #
 # Common code for testing z_mergetoaddress before and after sapling activation
 #
+
 from test_framework.authproxy import JSONRPCException
 from test_framework.util import assert_equal, connect_nodes_bi, \
     initialize_chain_clean, start_node, sync_blocks, sync_mempools, \
@@ -19,12 +20,14 @@ class MergeToAddressHelper:
         print("Initializing test directory "+test.options.tmpdir)
         initialize_chain_clean(test.options.tmpdir, 4)
 
-    def setup_network(self, test):
+    def setup_network(self, test, additional_args=[]):
         args = ['-debug=zrpcunsafe', '-experimentalfeatures', '-zmergetoaddress']
+        args += additional_args
         test.nodes = []
         test.nodes.append(start_node(0, test.options.tmpdir, args))
         test.nodes.append(start_node(1, test.options.tmpdir, args))
         args2 = ['-debug=zrpcunsafe', '-experimentalfeatures', '-zmergetoaddress', '-mempooltxinputlimit=7']
+        args2 += additional_args
         test.nodes.append(start_node(2, test.options.tmpdir, args2))
         connect_nodes_bi(test.nodes, 0, 1)
         connect_nodes_bi(test.nodes, 1, 2)
@@ -32,7 +35,7 @@ class MergeToAddressHelper:
         test.is_network_split = False
         test.sync_all()
 
-    def run_test(self, test):
+    def run_test(self, test, addr_type):
         print "Mining blocks..."
 
         test.nodes[0].generate(1)
@@ -56,7 +59,7 @@ class MergeToAddressHelper:
         assert_equal(test.nodes[2].getbalance(), 30)
 
         # Shield the coinbase
-        myzaddr = test.nodes[0].z_getnewaddress()
+        myzaddr = test.nodes[0].z_getnewaddress(addr_type)
         result = test.nodes[0].z_shieldcoinbase("*", myzaddr, 0)
         wait_and_assert_operationid_status(test.nodes[0], result['opid'])
         test.sync_all()
@@ -174,7 +177,7 @@ class MergeToAddressHelper:
         assert_equal(test.nodes[2].getbalance(), 30)
 
         # Shield all notes to another z-addr
-        myzaddr2 = test.nodes[0].z_getnewaddress()
+        myzaddr2 = test.nodes[0].z_getnewaddress(addr_type)
         result = test.nodes[0].z_mergetoaddress(["ANY_ZADDR"], myzaddr2, 0)
         assert_equal(result["mergingUTXOs"], Decimal('0'))
         assert_equal(result["remainingUTXOs"], Decimal('0'))

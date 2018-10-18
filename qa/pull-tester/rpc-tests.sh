@@ -30,6 +30,7 @@ testScripts=(
     'wallet_sapling.py'
     'wallet_listnotes.py'
     'mergetoaddress_sprout.py'
+    'mergetoaddress_sapling.py'
     'listtransactions.py'
     'mempool_resurrect_test.py'
     'txn_doublespend.py'
