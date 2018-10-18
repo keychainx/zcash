@@ -6,7 +6,8 @@
 from test_framework.test_framework import BitcoinTestFramework
 from mergetoaddress_helper import MergeToAddressHelper
 
-class WalletMergeToAddressTest (BitcoinTestFramework):
+
+class MergeToAddressSprout (BitcoinTestFramework):
     helper = MergeToAddressHelper()
 
     def setup_chain(self):
@@ -15,8 +16,9 @@ class WalletMergeToAddressTest (BitcoinTestFramework):
     def setup_network(self, split=False):
         self.helper.setup_network(self)
 
-    def run_test (self):
+    def run_test(self):
         self.helper.run_test(self)
 
+
 if __name__ == '__main__':
-    WalletMergeToAddressTest().main()
+    MergeToAddressSprout().main()
