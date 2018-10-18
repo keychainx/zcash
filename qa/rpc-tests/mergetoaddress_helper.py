@@ -7,11 +7,21 @@
 #
 
 from test_framework.authproxy import JSONRPCException
-from test_framework.util import assert_equal, connect_nodes_bi, \
+from test_framework.util import assert_equal, connect_nodes_bi, fail, \
     initialize_chain_clean, start_node, sync_blocks, sync_mempools, \
     wait_and_assert_operationid_status
 
 from decimal import Decimal
+
+
+def assert_mergetoaddress_exception(expected_error_msg, merge_to_address_lambda):
+    try:
+        merge_to_address_lambda()
+        fail("Expected exception: %s" % expected_error_msg)
+    except JSONRPCException as e:
+        assert_equal(expected_error_msg, e.error['message'])
+    except Exception as e:
+        fail("Expected JSONRPCException. Found %s" % repr(e))
 
 
 class MergeToAddressHelper:
@@ -82,85 +92,55 @@ class MergeToAddressHelper:
         test.sync_all()
 
         # Merging will fail because from arguments need to be in an array
-        try:
-            test.nodes[0].z_mergetoaddress("*", myzaddr)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("JSON value is not an array as expected" in errorString, True)
+        assert_mergetoaddress_exception(
+            "JSON value is not an array as expected",
+            lambda: test.nodes[0].z_mergetoaddress("*", myzaddr))
 
         # Merging will fail when trying to spend from watch-only address
         test.nodes[2].importaddress(mytaddr)
-        try:
-            test.nodes[2].z_mergetoaddress([mytaddr], myzaddr)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("Could not find any funds to merge" in errorString, True)
+        assert_mergetoaddress_exception(
+            "Could not find any funds to merge.",
+            lambda: test.nodes[2].z_mergetoaddress([mytaddr], myzaddr))
 
         # Merging will fail because fee is negative
-        try:
-            test.nodes[0].z_mergetoaddress(["*"], myzaddr, -1)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("Amount out of range" in errorString, True)
+        assert_mergetoaddress_exception(
+            "Amount out of range",
+            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, -1))
 
         # Merging will fail because fee is larger than MAX_MONEY
-        try:
-            test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('21000000.00000001'))
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("Amount out of range" in errorString, True)
+        assert_mergetoaddress_exception(
+            "Amount out of range",
+            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('21000000.00000001')))
 
         # Merging will fail because fee is larger than sum of UTXOs
-        try:
-            test.nodes[0].z_mergetoaddress(["*"], myzaddr, 999)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("Insufficient funds" in errorString, True)
+        assert_mergetoaddress_exception(
+            "Insufficient funds, have 50.00, which is less than miners fee 999.00",
+            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, 999))
 
         # Merging will fail because transparent limit parameter must be at least 0
-        try:
-            test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), -1)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("Limit on maximum number of UTXOs cannot be negative" in errorString, True)
+        assert_mergetoaddress_exception(
+            "Limit on maximum number of UTXOs cannot be negative",
+            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), -1))
 
         # Merging will fail because transparent limit parameter is absurdly large
-        try:
-            test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 99999999999999)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("JSON integer out of range" in errorString, True)
+        assert_mergetoaddress_exception(
+            "JSON integer out of range",
+            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 99999999999999))
 
         # Merging will fail because shielded limit parameter must be at least 0
-        try:
-            test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 50, -1)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("Limit on maximum number of notes cannot be negative" in errorString, True)
+        assert_mergetoaddress_exception(
+            "Limit on maximum number of notes cannot be negative",
+            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 50, -1))
 
         # Merging will fail because shielded limit parameter is absurdly large
-        try:
-            test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 50, 99999999999999)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("JSON integer out of range" in errorString, True)
+        assert_mergetoaddress_exception(
+            "JSON integer out of range",
+            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 50, 99999999999999))
 
         # Merging will fail for this specific case where it would spend a fee and do nothing
-        try:
-            test.nodes[0].z_mergetoaddress([mytaddr], mytaddr)
-            assert(False)
-        except JSONRPCException, e:
-            errorString = e.error['message']
-        assert_equal("Destination address is also the only source address, and all its funds are already merged" in errorString, True)
+        assert_mergetoaddress_exception(
+            "Destination address is also the only source address, and all its funds are already merged.",
+            lambda: test.nodes[0].z_mergetoaddress([mytaddr], mytaddr))
 
         # Merge UTXOs from node 0 of value 30, standard fee of 0.00010000
         result = test.nodes[0].z_mergetoaddress([mytaddr, mytaddr2, mytaddr3], myzaddr)
