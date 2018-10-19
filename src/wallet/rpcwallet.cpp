@@ -4130,6 +4130,7 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
 #define MERGE_TO_ADDRESS_DEFAULT_SHIELDED_LIMIT 10
 
 #define JOINSPLIT_SIZE GetSerializeSize(JSDescription(), SER_NETWORK, PROTOCOL_VERSION)
+#define OUTPUTDESCRIPTION_SIZE GetSerializeSize(OutputDescription(), SER_NETWORK, PROTOCOL_VERSION)
 
 UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
 {
@@ -4212,7 +4213,6 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     std::set<std::string> setAddress;
 
     // Sources
-    bool containsSaplingZaddrSource = false;
     for (const UniValue& o : addresses.getValues()) {
         if (!o.isStr())
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected string");
@@ -4238,9 +4238,6 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
                     if (!(useAny || useAnyNote)) {
                         zaddrs.insert(zaddr);
                     }
-                    // Check if z-addr is Sapling
-                    bool isSapling = boost::get<libzcash::SaplingPaymentAddress>(&zaddr) != nullptr;
-                    containsSaplingZaddrSource |= isSapling;
                 } else {
                     throw JSONRPCError(
                         RPC_INVALID_PARAMETER,
@@ -4254,21 +4251,26 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
         setAddress.insert(address);
     }
 
+    int nextBlockHeight = chainActive.Height() + 1;
+    bool overwinterActive = NetworkUpgradeActive(nextBlockHeight, Params().GetConsensus(), Consensus::UPGRADE_OVERWINTER);
+    bool saplingActive = NetworkUpgradeActive(nextBlockHeight, Params().GetConsensus(), Consensus::UPGRADE_SAPLING);
+
     // Validate the destination address
     auto destaddress = params[1].get_str();
-    bool isToZaddr = false;
+    bool isToSproutZaddr = false;
     bool isToSaplingZaddr = false;
     CTxDestination taddr = DecodeDestination(destaddress);
     if (!IsValidDestination(taddr)) {
-        if (IsValidPaymentAddressString(destaddress)) {
-            isToZaddr = true;
-
-            // Is this a Sapling address?
-            auto res = DecodePaymentAddress(destaddress);
-            if (IsValidPaymentAddress(res)) {
-                isToSaplingZaddr = boost::get<libzcash::SaplingPaymentAddress>(&res) != nullptr;
+        auto decodeAddr = DecodePaymentAddress(destaddress);
+        if (IsValidPaymentAddress(decodeAddr)) {
+            if (boost::get<libzcash::SaplingPaymentAddress>(&decodeAddr) != nullptr) {
+                isToSaplingZaddr = true;
+                // If Sapling is not active, do not allow sending to a sapling addresses.
+                if (!saplingActive) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, Sapling has not activated");
+                }
             } else {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, unknown address format: ") + destaddress );
+                isToSproutZaddr = true;
             }
         } else {
             throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, unknown address format: ") + destaddress );
@@ -4304,7 +4306,7 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     std::string memo;
     if (params.size() > 5) {
         memo = params[5].get_str();
-        if (!isToZaddr) {
+        if (!(isToSproutZaddr || isToSaplingZaddr)) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Memo can not be used with a taddr.  It can only be used with a zaddr.");
         } else if (!IsHex(memo)) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected memo data in hexadecimal format.");
@@ -4315,21 +4317,6 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     }
 
     MergeToAddressRecipient recipient(destaddress, memo);
-
-    int nextBlockHeight = chainActive.Height() + 1;
-    bool overwinterActive = NetworkUpgradeActive(nextBlockHeight, Params().GetConsensus(), Consensus::UPGRADE_OVERWINTER);
-    unsigned int max_tx_size = MAX_TX_SIZE_AFTER_SAPLING;
-    if (!NetworkUpgradeActive(nextBlockHeight, Params().GetConsensus(), Consensus::UPGRADE_SAPLING)) {
-        max_tx_size = MAX_TX_SIZE_BEFORE_SAPLING;
-    }
-
-    // If this RPC does support Sapling...
-    // If Sapling is not active, do not allow sending from or sending to Sapling addresses.
-    if (!NetworkUpgradeActive(nextBlockHeight, Params().GetConsensus(), Consensus::UPGRADE_SAPLING)) {
-        if (isToSaplingZaddr || containsSaplingZaddrSource) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, Sapling has not activated");
-        }
-    }
 
     // Prepare to get UTXOs and notes
     std::vector<MergeToAddressInputUTXO> utxoInputs;
@@ -4344,9 +4331,12 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     bool maxedOutNotesFlag = false;
     size_t mempoolLimit = (nUTXOLimit != 0) ? nUTXOLimit : (overwinterActive ? 0 : (size_t)GetArg("-mempooltxinputlimit", 0));
 
+    unsigned int max_tx_size = saplingActive ? MAX_TX_SIZE_AFTER_SAPLING : MAX_TX_SIZE_BEFORE_SAPLING;
     size_t estimatedTxSize = 200;  // tx overhead + wiggle room
-    if (isToZaddr) {
+    if (isToSproutZaddr) {
         estimatedTxSize += JOINSPLIT_SIZE;
+    } else if (isToSaplingZaddr) {
+        estimatedTxSize += OUTPUTDESCRIPTION_SIZE;
     }
 
     if (useAny || useAnyUTXO || taddrs.size() > 0) {
@@ -4398,6 +4388,11 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
         std::vector<SaplingNoteEntry> saplingEntries;
         pwalletMain->GetFilteredNotes(sproutEntries, saplingEntries, zaddrs);
 
+        // If Sapling is not active, do not allow sending from sapling a addresses.
+        if (!saplingActive && saplingEntries.size() > 0) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, Sapling has not activated");
+        }
+
         // Find unspent notes and update estimated size
         for (CSproutNotePlaintextEntry& entry : sproutEntries) {
             noteCounter++;
@@ -4406,7 +4401,7 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
             if (!maxedOutNotesFlag) {
                 // If we haven't added any notes yet and the merge is to a
                 // z-address, we have already accounted for the first JoinSplit.
-                size_t increase = (noteInputs.empty() && !isToZaddr) || (noteInputs.size() % 2 == 0) ? JOINSPLIT_SIZE : 0;
+                size_t increase = (noteInputs.empty() && !isToSproutZaddr) || (noteInputs.size() % 2 == 0) ? JOINSPLIT_SIZE : 0;
                 if (estimatedTxSize + increase >= max_tx_size ||
                     (nNoteLimit > 0 && noteCounter > nNoteLimit))
                 {
@@ -4466,8 +4461,8 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     CMutableTransaction contextualTx = CreateNewContextualCMutableTransaction(
         Params().GetConsensus(),
         nextBlockHeight);
-    bool isShielded = numNotes > 0 || isToZaddr;
-    if (contextualTx.nVersion == 1 && isShielded) {
+    bool isSproutShielded = numNotes > 0 || isToSproutZaddr;
+    if (contextualTx.nVersion == 1 && isSproutShielded) {
         contextualTx.nVersion = 2; // Tx format should support vjoinsplit
     }
 
