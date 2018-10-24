@@ -463,12 +463,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
 
     // Copy zinputs to more flexible containers
     std::deque<MergeToAddressInputSproutNote> zInputsDeque;
-    for (auto o : sproutNoteInputs_) {
-        // TODO make MergeToAddressInputSproutNote use SproutSpendingKeys
-        if (boost::get<libzcash::SproutSpendingKey>(&std::get<3>(o)) == nullptr) {
-            // This should never happen as Sapling is handled above
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Could not get sprout spending key");
-        }
+    for (const auto& o : sproutNoteInputs_) {
         zInputsDeque.push_back(o);
     }
 
@@ -508,7 +503,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
 
     // At this point, we are guaranteed to have at least one input note.
     // Use address of first input note as the temporary change address.
-    SproutSpendingKey changeKey = boost::get<libzcash::SproutSpendingKey>(std::get<3>(zInputsDeque.front()));
+    SproutSpendingKey changeKey = std::get<3>(zInputsDeque.front());
     SproutPaymentAddress changeAddress = changeKey.address();
 
     CAmount vpubOldTarget = 0;
@@ -634,7 +629,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
             JSOutPoint jso = std::get<0>(t);
             SproutNote note = std::get<1>(t);
             CAmount noteFunds = std::get<2>(t);
-            SproutSpendingKey zkey = boost::get<libzcash::SproutSpendingKey>(std::get<3>(t));
+            SproutSpendingKey zkey = std::get<3>(t);
             zInputsDeque.pop_front();
 
             MergeToAddressWitnessAnchorData wad = jsopWitnessAnchorMap[jso.ToString()];

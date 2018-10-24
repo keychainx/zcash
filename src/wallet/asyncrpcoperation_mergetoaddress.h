@@ -29,7 +29,7 @@ using namespace libzcash;
 typedef std::tuple<COutPoint, CAmount, CScript> MergeToAddressInputUTXO;
 
 // Input JSOP is a tuple of JSOutpoint, note, amount, spending key
-typedef std::tuple<JSOutPoint, SproutNote, CAmount, SpendingKey> MergeToAddressInputSproutNote;
+typedef std::tuple<JSOutPoint, SproutNote, CAmount, SproutSpendingKey> MergeToAddressInputSproutNote;
 
 typedef std::tuple<SaplingOutPoint, SaplingNote, CAmount, SaplingExpandedSpendingKey> MergeToAddressInputSaplingNote;
 
