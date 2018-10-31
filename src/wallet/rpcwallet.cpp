@@ -4127,7 +4127,8 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
 
 
 #define MERGE_TO_ADDRESS_DEFAULT_TRANSPARENT_LIMIT 50
-#define MERGE_TO_ADDRESS_DEFAULT_SHIELDED_LIMIT 10
+#define MERGE_TO_ADDRESS_DEFAULT_SPROUT_LIMIT 20
+#define MERGE_TO_ADDRESS_DEFAULT_SAPLING_LIMIT 200
 
 #define JOINSPLIT_SIZE GetSerializeSize(JSDescription(), SER_NETWORK, PROTOCOL_VERSION)
 #define OUTPUTDESCRIPTION_SIZE GetSerializeSize(OutputDescription(), SER_NETWORK, PROTOCOL_VERSION)
@@ -4175,7 +4176,7 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
             "4. transparent_limit     (numeric, optional, default="
             + strprintf("%d", MERGE_TO_ADDRESS_DEFAULT_TRANSPARENT_LIMIT) + ") Limit on the maximum number of UTXOs to merge.  Set to 0 to use node option -mempooltxinputlimit (before Overwinter), or as many as will fit in the transaction (after Overwinter).\n"
             "4. shielded_limit        (numeric, optional, default="
-            + strprintf("%d", MERGE_TO_ADDRESS_DEFAULT_SHIELDED_LIMIT) + ") Limit on the maximum number of notes to merge.  Set to 0 to merge as many as will fit in the transaction.\n"
+            + strprintf("%d Sprout or %d Sapling Notes", MERGE_TO_ADDRESS_DEFAULT_SPROUT_LIMIT, MERGE_TO_ADDRESS_DEFAULT_SAPLING_LIMIT) + ") Limit on the maximum number of notes to merge.  Set to 0 to merge as many as will fit in the transaction.\n"
             "5. \"memo\"                (string, optional) Encoded as hex. When toaddress is a z-addr, this will be stored in the memo field of the new note.\n"
             "\nResult:\n"
             "{\n"
@@ -4296,12 +4297,15 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
         }
     }
 
-    int nNoteLimit = MERGE_TO_ADDRESS_DEFAULT_SHIELDED_LIMIT;
+    int sproutNoteLimit = MERGE_TO_ADDRESS_DEFAULT_SPROUT_LIMIT;
+    int saplingNoteLimit = MERGE_TO_ADDRESS_DEFAULT_SAPLING_LIMIT;
     if (params.size() > 4) {
-        nNoteLimit = params[4].get_int();
+        int nNoteLimit = params[4].get_int();
         if (nNoteLimit < 0) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Limit on maximum number of notes cannot be negative");
         }
+        sproutNoteLimit = nNoteLimit;
+        saplingNoteLimit = nNoteLimit;
     }
 
     std::string memo;
@@ -4421,7 +4425,7 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
                 // z-address, we have already accounted for the first JoinSplit.
                 size_t increase = (sproutNoteInputs.empty() && !isToSproutZaddr) || (sproutNoteInputs.size() % 2 == 0) ? JOINSPLIT_SIZE : 0;
                 if (estimatedTxSize + increase >= max_tx_size ||
-                    (nNoteLimit > 0 && noteCounter > nNoteLimit))
+                    (sproutNoteLimit > 0 && noteCounter > sproutNoteLimit))
                 {
                     maxedOutNotesFlag = true;
                 } else {
@@ -4445,7 +4449,7 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
             if (!maxedOutNotesFlag) {
                 size_t increase = SPENDDESCRIPTION_SIZE;
                 if (estimatedTxSize + increase >= max_tx_size ||
-                    (nNoteLimit > 0 && noteCounter > nNoteLimit))
+                    (saplingNoteLimit > 0 && noteCounter > saplingNoteLimit))
                 {
                     maxedOutNotesFlag = true;
                 } else {
