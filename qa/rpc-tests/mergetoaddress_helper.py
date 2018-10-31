@@ -26,8 +26,10 @@ def assert_mergetoaddress_exception(expected_error_msg, merge_to_address_lambda)
 
 class MergeToAddressHelper:
 
-    def __init__(self, addr_type, utxos_to_generate, utxos_in_tx1, utxos_in_tx2, test_mempooltxinputlimit):
+    def __init__(self, addr_type, any_zaddr, utxos_to_generate, utxos_in_tx1, utxos_in_tx2, test_mempooltxinputlimit):
         self.addr_type = addr_type
+        self.any_zaddr = [any_zaddr]
+        self.any_zaddr_or_utxo = [any_zaddr, "ANY_TADDR"]
         # utxos_to_generate, utxos_in_tx1, utxos_in_tx2 have to do with testing transaction size limits
         self.utxos_to_generate = utxos_to_generate
         self.utxos_in_tx1 = utxos_in_tx1
@@ -102,7 +104,7 @@ class MergeToAddressHelper:
         # Merging will fail because from arguments need to be in an array
         assert_mergetoaddress_exception(
             "JSON value is not an array as expected",
-            lambda: test.nodes[0].z_mergetoaddress("*", myzaddr))
+            lambda: test.nodes[0].z_mergetoaddress("notanarray", myzaddr))
 
         # Merging will fail when trying to spend from watch-only address
         test.nodes[2].importaddress(mytaddr)
@@ -113,37 +115,37 @@ class MergeToAddressHelper:
         # Merging will fail because fee is negative
         assert_mergetoaddress_exception(
             "Amount out of range",
-            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, -1))
+            lambda: test.nodes[0].z_mergetoaddress(self.any_zaddr_or_utxo, myzaddr, -1))
 
         # Merging will fail because fee is larger than MAX_MONEY
         assert_mergetoaddress_exception(
             "Amount out of range",
-            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('21000000.00000001')))
+            lambda: test.nodes[0].z_mergetoaddress(self.any_zaddr_or_utxo, myzaddr, Decimal('21000000.00000001')))
 
         # Merging will fail because fee is larger than sum of UTXOs
         assert_mergetoaddress_exception(
             "Insufficient funds, have 50.00, which is less than miners fee 999.00",
-            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, 999))
+            lambda: test.nodes[0].z_mergetoaddress(self.any_zaddr_or_utxo, myzaddr, 999))
 
         # Merging will fail because transparent limit parameter must be at least 0
         assert_mergetoaddress_exception(
             "Limit on maximum number of UTXOs cannot be negative",
-            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), -1))
+            lambda: test.nodes[0].z_mergetoaddress(self.any_zaddr_or_utxo, myzaddr, Decimal('0.001'), -1))
 
         # Merging will fail because transparent limit parameter is absurdly large
         assert_mergetoaddress_exception(
             "JSON integer out of range",
-            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 99999999999999))
+            lambda: test.nodes[0].z_mergetoaddress(self.any_zaddr_or_utxo, myzaddr, Decimal('0.001'), 99999999999999))
 
         # Merging will fail because shielded limit parameter must be at least 0
         assert_mergetoaddress_exception(
             "Limit on maximum number of notes cannot be negative",
-            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 50, -1))
+            lambda: test.nodes[0].z_mergetoaddress(self.any_zaddr_or_utxo, myzaddr, Decimal('0.001'), 50, -1))
 
         # Merging will fail because shielded limit parameter is absurdly large
         assert_mergetoaddress_exception(
             "JSON integer out of range",
-            lambda: test.nodes[0].z_mergetoaddress(["*"], myzaddr, Decimal('0.001'), 50, 99999999999999))
+            lambda: test.nodes[0].z_mergetoaddress(self.any_zaddr_or_utxo, myzaddr, Decimal('0.001'), 50, 99999999999999))
 
         # Merging will fail for this specific case where it would spend a fee and do nothing
         assert_mergetoaddress_exception(
@@ -166,7 +168,7 @@ class MergeToAddressHelper:
 
         # Shield all notes to another z-addr
         myzaddr2 = test.nodes[0].z_getnewaddress(self.addr_type)
-        result = test.nodes[0].z_mergetoaddress(["ANY_ZADDR"], myzaddr2, 0)
+        result = test.nodes[0].z_mergetoaddress(self.any_zaddr, myzaddr2, 0)
         assert_equal(result["mergingUTXOs"], Decimal('0'))
         assert_equal(result["remainingUTXOs"], Decimal('0'))
         assert_equal(result["mergingNotes"], Decimal('2'))
@@ -194,7 +196,7 @@ class MergeToAddressHelper:
         assert_equal(test.nodes[2].getbalance(), 0)
 
         # Merge all notes from node 0 into a node 0 taddr, and set fee to 0
-        result = test.nodes[0].z_mergetoaddress(["ANY_ZADDR"], mytaddr, 0)
+        result = test.nodes[0].z_mergetoaddress(self.any_zaddr, mytaddr, 0)
         wait_and_assert_operationid_status(test.nodes[0], result['opid'])
         test.sync_all()
         test.nodes[1].generate(1)
@@ -351,7 +353,7 @@ class MergeToAddressHelper:
         test.sync_all()
 
         # Shield both UTXOs and notes to a z-addr
-        result = test.nodes[0].z_mergetoaddress(["*"], myzaddr, 0, 10, 2)
+        result = test.nodes[0].z_mergetoaddress(self.any_zaddr_or_utxo, myzaddr, 0, 10, 2)
         assert_equal(result["mergingUTXOs"], Decimal('10'))
         assert_equal(result["remainingUTXOs"], Decimal('7'))
         assert_equal(result["mergingNotes"], Decimal('2'))
